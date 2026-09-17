@@ -4,54 +4,40 @@ export default {
     const fileId = url.searchParams.get("id");
 
     if (!fileId) {
-      return new Response("Error: Please provide a File ID (?id=FILE_ID)", { 
+      return new Response("Error: Missing file ID", {
         status: 400,
         headers: { "Access-Control-Allow-Origin": "*" }
       });
     }
 
-    const driveBase = `https://drive.google.com/uc?export=download&id=${fileId}`;
-    const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    const driveUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
 
-    // প্রথম রিকোয়েস্ট পাঠানো কনফার্মেশন টোকেন পাওয়ার জন্য
-    let initialRes = await fetch(driveBase, {
-      headers: { "User-Agent": userAgent }
+    const driveRes = await fetch(driveUrl, {
+      headers: {
+        "Range": request.headers.get("Range") || "",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
     });
 
-    let downloadUrl = driveBase;
-    let cookieHeader = initialRes.headers.get("set-cookie") || "";
+    // গুগলের সব পুরোনো হেডার সরিয়ে নতুন হেডার তৈরি
+    const headers = new Headers();
+    headers.set("Access-Control-Allow-Origin", "*");
+    headers.set("Access-Control-Allow-Headers", "*");
+    headers.set("Content-Type", "video/mp4");
+    headers.set("Content-Disposition", "inline");
+    headers.set("Accept-Ranges", "bytes");
 
-    // বড় ফাইলের ভাইরাস ওয়ার্নিং পেজ হ্যান্ডেল করা
-    const text = await initialRes.clone().text();
-    const confirmMatch = text.match(/confirm=([^&"'>\s]+)/);
-
-    if (confirmMatch) {
-      downloadUrl = `https://drive.google.com/uc?export=download&confirm=${confirmMatch[1]}&id=${fileId}`;
+    if (driveRes.headers.has("Content-Range")) {
+      headers.set("Content-Range", driveRes.headers.get("Content-Range"));
+    }
+    if (driveRes.headers.has("Content-Length")) {
+      headers.set("Content-Length", driveRes.headers.get("Content-Length"));
     }
 
-    // মূল ভিডিও স্ট্রিম ফেচ করা
-    const fetchHeaders = new Headers();
-    if (request.headers.has("Range")) {
-      fetchHeaders.set("Range", request.headers.get("Range"));
-    }
-    fetchHeaders.set("User-Agent", userAgent);
-    if (cookieHeader) {
-      fetchHeaders.set("Cookie", cookieHeader);
-    }
-
-    const streamRes = await fetch(downloadUrl, {
-      headers: fetchHeaders
-    });
-
-    const responseHeaders = new Headers(streamRes.headers);
-    responseHeaders.set("Access-Control-Allow-Origin", "*");
-    responseHeaders.set("Access-Control-Allow-Headers", "*");
-    responseHeaders.set("Access-Control-Expose-Headers", "Content-Length, Content-Range");
-
-    return new Response(streamRes.body, {
-      status: streamRes.status,
-      statusText: streamRes.statusText,
-      headers: responseHeaders
+    return new Response(driveRes.body, {
+      status: driveRes.status,
+      statusText: driveRes.statusText,
+      headers: headers
     });
   }
 };
